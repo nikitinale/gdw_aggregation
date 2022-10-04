@@ -30,11 +30,10 @@ import pyproj
 ee.Initialize()
 
 # All LULC types in Dynamic World Land Use Land Cover classification taxonomy
-PROBABILITY_BANDS = [
-    'water', 'trees', 'grass', 'flooded_vegetation', 'crops', 'shrub_and_scrub',
-    'built', 'bare', 'snow_and_ice'
+BANDS = [
+        'water', 'trees', 'grass', 'flooded_vegetation', 'crops', 'shrub_and_scrub',
+        'built', 'bare', 'snow_and_ice'
 ]
-
 
 def get_scale(width: float, height: float, resolution: int = 10, max_element=1e5) -> int:
     ''' Define optimal scale for reducing number of elements returned from GEE
@@ -144,13 +143,38 @@ def transform_crs(geometry: Polygon,
     new_geometry = transform(reproject.transform, geometry)
     return new_geometry
 
+def mode(array: np.array) -> any:
+    ''' Calculate mode in the <array> -- the most frequent value.
+
+    Parameters:
+    -----------
+    array: np.array (any dtype)
+        input array
+
+    Returns: any (according to the dtype of the array)
+    --------
+        The most frequent value in the array
+
+    Notes:
+    ------
+        Mode aggregation makes sense for assessing the most probable
+        type of LULC.
+    '''
+
+    freq = np.unique(array, return_counts=True)
+    idx = np.argmax(freq[1])
+    return freq[0][idx]
+
 
 def gdw_get_mean_probabilities(polygon: Polygon,
                                crs: str,
                                startDate: str,
                                endDate: str,
-                               place_id=None,
-                               sequence=True) -> dict:
+                               place_id: any=None,
+                               bands: list=BANDS,
+                               reducer_time: str='mean',
+                               reducer_spatial: str='mean',
+                               sequence: bool=True) -> dict:
     ''' Calculates mean probabilities of LULC types from Google Dynamyc World.
         The probabilitieas are averaged across defined period of time and
         defined area of interest.
@@ -162,14 +186,29 @@ def gdw_get_mean_probabilities(polygon: Polygon,
     crs : str
         Coordinate reference system of the area of interest
     startDate : str
-        Start of a period for averaging probability of LULC in a format 'YYYY-MM-DD'
+        Start of a period for averaging probability of LULC in a format
+        'YYYY-MM-DD'
     endDate : str
-        End of a period for averaging probability of LULC in a format 'YYYY-MM-DD'
+        End of a period for averaging probability of LULC in a format
+        'YYYY-MM-DD'
+    bands: list of str, default ['water', 'trees', 'grass',
+        'flooded_vegetation', 'crops', 'shrub_and_scrub',
+        'built', 'bare', 'snow_and_ice']
+        Bands of Dynamic World for aggregation. Possible options:
+        'water', 'trees', 'grass', 'flooded_vegetation', 'crops',
+        'shrub_and_scrub', 'built', 'bare', 'snow_and_ice'
     place_id : str or int, default None
         ID for the record with averaged probabilities of LULC
     sequence : Bool, default True
         If data are retrieved in a long sequence the 1 second pause
         enchance stability of the process
+    reducer_time : str, default 'mean'
+        Function for aggregation probabilities of LULC types (bands) across
+        time dimension. Possible options: 'mean', 'max', 'min', 'median',
+        'mode'
+    reducer_spatial : str, default 'mean'
+        Function for aggregation probabilities of LULC types (bands) across
+        region of interest
 
     Returns
     -------
@@ -180,7 +219,8 @@ def gdw_get_mean_probabilities(polygon: Polygon,
     Notes
     -----
         The LULC bands in Google Dynamic World: water, trees, grass,
-        flooded_vegetation, crops, shrub_and_scrub, built, bare, snow_and_ice
+        flooded_vegetation, crops, shrub_and_scrub, built, bare, snow_and_ice.
+        Band 'label' not included by default.
     '''
 
     if sequence:
@@ -213,17 +253,26 @@ def gdw_get_mean_probabilities(polygon: Polygon,
     scale_dw = get_scale(width=width, height=height)
 
     projection = ee.Projection(crs_dw).atScale(scale_dw)
-    probabilityCol = dw.select(PROBABILITY_BANDS)
-    # TODO: We can use not only mean reducer, but max, mode, etc.
-    meanProbability = probabilityCol.reduce(ee.Reducer.mean())
+    probabilityCol = dw.select(bands)
+    treducer_fun = {'mean': ee.Reducer.mean(),
+                    'max': ee.Reducer.max(),
+                    'min': ee.Reducer.min(),
+                    'median': ee.Reducer.median(),
+                    'mode': ee.Reducer.mode()}[reducer_time]
+    meanProbability = probabilityCol.reduce(treducer_fun)
     meanProbability = meanProbability.setDefaultProjection(projection)
 
+    sreducer_fun = {'mean': np.mean,
+                   'max': np.max,
+                   'min': np.min,
+                   'median': np.median,
+                   'mode': mode}[reducer_spatial]
     x_scale = 0
-    for band in PROBABILITY_BANDS:
+    for band in bands:
         try:
             prob_array = get_band(tile=meanProbability,
                                   aoi=aoi,
-                                  band=band+'_mean')
+                                  band=band+'_'+reducer_time)
             if x_scale == 0:
                 x_scale = prob_array.shape[0]/mask.bounds[2]
                 y_scale = prob_array.shape[1]/mask.bounds[3]
@@ -233,7 +282,7 @@ def gdw_get_mean_probabilities(polygon: Polygon,
                                                    prob_array.T.shape).T.astype(bool)
 
             prob_array = np.ma.masked_array(prob_array, mask=~mask)
-            mean_probabilities[band] = prob_array.mean()
+            mean_probabilities[band] = sreducer_fun(prob_array[~prob_array.mask])
         except ee.EEException as e:
             print('Error in samplig probabilities values', e)
             mean_probabilities[band] = None
