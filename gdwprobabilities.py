@@ -30,10 +30,8 @@ import pyproj
 ee.Initialize()
 
 # All LULC types in Dynamic World Land Use Land Cover classification taxonomy
-BANDS = [
-        'water', 'trees', 'grass', 'flooded_vegetation', 'crops', 'shrub_and_scrub',
-        'built', 'bare', 'snow_and_ice'
-]
+BANDS = ['water', 'trees', 'grass', 'flooded_vegetation', 'crops', 'shrub_and_scrub',
+        'built', 'bare', 'snow_and_ice']
 
 def get_scale(width: float, height: float, resolution: int = 10, max_element=1e5) -> int:
     ''' Define optimal scale for reducing number of elements returned from GEE
@@ -148,22 +146,34 @@ def mode(array: np.array) -> any:
 
     Parameters:
     -----------
-    array: np.array (any dtype)
+    array: np.ma.array (any dtype)
         input array
 
     Returns: any (according to the dtype of the array)
     --------
         The most frequent value in the array
-
-    Notes:
-    ------
-        Mode aggregation makes sense for assessing the most probable
-        type of LULC.
     '''
 
     freq = np.unique(array, return_counts=True)
     idx = np.argmax(freq[1])
     return freq[0][idx]
+
+
+def none_fun(array: np.array) -> any:
+    ''' Return unmasked flatten array
+
+    Parameters:
+    -----------
+    array: np.ma.array (any dtype)
+        input array
+
+    Returns: np.array
+    --------
+        Unmasked flatten array        
+    '''
+
+    data = array[~array.mask]
+    return data.data
 
 
 def gdw_get_mean_probabilities(polygon: Polygon,
@@ -205,10 +215,15 @@ def gdw_get_mean_probabilities(polygon: Polygon,
     reducer_time : str, default 'mean'
         Function for aggregation probabilities of LULC types (bands) across
         time dimension. Possible options: 'mean', 'max', 'min', 'median',
-        'mode'
+        'mode'. Mode aggregation makes sense for assessing the most probable
+        type of LULC.
     reducer_spatial : str, default 'mean'
         Function for aggregation probabilities of LULC types (bands) across
-        region of interest
+        region of interest. Possible options: 'mean', 'max', 'min', 'median',
+        'mode', 'none'. Mode aggregation makes sense for assessing the most
+        probable type of LULC. 'none' means no spatial aggregation,
+        numpy.arrays with pixel values will returned for each band. Elements
+        of the arrays with same index represent the same pixels.
 
     Returns
     -------
@@ -216,8 +231,8 @@ def gdw_get_mean_probabilities(polygon: Polygon,
         Dictionary with LULC categories as keys, 
         and their mean probabilities in AOI for defined perion as values
 
-    Notes
-    -----
+    Notes:
+    ------
         The LULC bands in Google Dynamic World: water, trees, grass,
         flooded_vegetation, crops, shrub_and_scrub, built, bare, snow_and_ice.
         Band 'label' not included by default.
@@ -266,7 +281,8 @@ def gdw_get_mean_probabilities(polygon: Polygon,
                    'max': np.max,
                    'min': np.min,
                    'median': np.median,
-                   'mode': mode}[reducer_spatial]
+                   'mode': mode,
+                   'none': none_fun}[reducer_spatial]
     x_scale = 0
     for band in bands:
         try:
