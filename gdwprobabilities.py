@@ -27,6 +27,7 @@ from shapely.ops import transform
 import pyproj
 
 # Dataset located at Google Earth Engine
+# EE functions cannot not be used without initialization
 ee.Initialize()
 
 # All LULC types in Dynamic World Land Use Land Cover classification taxonomy
@@ -215,12 +216,12 @@ def gdw_get_mean_probabilities(polygon: Polygon,
     reducer_time : str, default 'mean'
         Function for aggregation probabilities of LULC types (bands) across
         time dimension. Possible options: 'mean', 'max', 'min', 'median',
-        'mode'. Mode aggregation makes sense for assessing the most probable
+        'mode', 'std'. Mode aggregation makes sense for assessing the most probable
         type of LULC.
     reducer_spatial : str, default 'mean'
         Function for aggregation probabilities of LULC types (bands) across
         region of interest. Possible options: 'mean', 'max', 'min', 'median',
-        'mode', 'none'. Mode aggregation makes sense for assessing the most
+        'mode', 'std', 'none'. Mode aggregation makes sense for assessing the most
         probable type of LULC. 'none' means no spatial aggregation,
         numpy.arrays with pixel values will returned for each band. Elements
         of the arrays with same index represent the same pixels.
@@ -273,7 +274,8 @@ def gdw_get_mean_probabilities(polygon: Polygon,
                     'max': ee.Reducer.max(),
                     'min': ee.Reducer.min(),
                     'median': ee.Reducer.median(),
-                    'mode': ee.Reducer.mode()}[reducer_time]
+                    'mode': ee.Reducer.mode(),
+                    'std': ee.Reducer.stdDev()}[reducer_time]
     meanProbability = probabilityCol.reduce(treducer_fun)
     meanProbability = meanProbability.setDefaultProjection(projection)
 
@@ -282,6 +284,7 @@ def gdw_get_mean_probabilities(polygon: Polygon,
                    'min': np.min,
                    'median': np.median,
                    'mode': mode,
+                   'std': np.std,
                    'none': none_fun}[reducer_spatial]
     x_scale = 0
     for band in bands:
