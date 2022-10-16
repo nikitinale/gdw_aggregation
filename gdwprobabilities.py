@@ -32,7 +32,8 @@ ee.Initialize()
 
 # All LULC types in Dynamic World Land Use Land Cover classification taxonomy
 BANDS = ['water', 'trees', 'grass', 'flooded_vegetation', 'crops', 'shrub_and_scrub',
-        'built', 'bare', 'snow_and_ice']
+         'built', 'bare', 'snow_and_ice']
+
 
 def get_scale(width: float, height: float, resolution: int = 10, max_element=1e5) -> int:
     ''' Define optimal scale for reducing number of elements returned from GEE
@@ -111,7 +112,7 @@ def get_band(tile: ee.image.Image, aoi: ee.Geometry.Polygon, band: str) -> np.ar
     '''
 
     array = np.array(tile.sampleRectangle(aoi).get(band).getInfo())
-    return array.T
+    return array
 
 
 def transform_crs(geometry: Polygon,
@@ -141,6 +142,7 @@ def transform_crs(geometry: Polygon,
         always_xy=True)
     new_geometry = transform(reproject.transform, geometry)
     return new_geometry
+
 
 def mode(array: np.array) -> any:
     ''' Calculate mode in the <array> -- the most frequent value.
@@ -181,11 +183,11 @@ def gdw_get_mean_probabilities(polygon: Polygon,
                                crs: str,
                                startDate: str,
                                endDate: str,
-                               place_id: any=None,
-                               bands: list=BANDS,
-                               reducer_time: str='mean',
-                               reducer_spatial: str='mean',
-                               sequence: bool=True) -> dict:
+                               place_id: any = None,
+                               bands: list = BANDS,
+                               reducer_time: str = 'mean',
+                               reducer_spatial: str = 'mean',
+                               sequence: bool = True) -> dict:
     ''' Calculates mean probabilities of LULC types from Google Dynamyc World.
         The probabilitieas are averaged across defined period of time and
         defined area of interest.
@@ -280,12 +282,12 @@ def gdw_get_mean_probabilities(polygon: Polygon,
     meanProbability = meanProbability.setDefaultProjection(projection)
 
     sreducer_fun = {'mean': np.mean,
-                   'max': np.max,
-                   'min': np.min,
-                   'median': np.median,
-                   'mode': mode,
-                   'std': np.std,
-                   'none': none_fun}[reducer_spatial]
+                    'max': np.max,
+                    'min': np.min,
+                    'median': np.median,
+                    'mode': mode,
+                    'std': np.std,
+                    'none': none_fun}[reducer_spatial]
     x_scale = 0
     for band in bands:
         try:
@@ -293,15 +295,16 @@ def gdw_get_mean_probabilities(polygon: Polygon,
                                   aoi=aoi,
                                   band=band+'_'+reducer_time)
             if x_scale == 0:
-                x_scale = prob_array.shape[0]/mask.bounds[2]
-                y_scale = prob_array.shape[1]/mask.bounds[3]
+                x_scale = prob_array.shape[0]/mask.bounds[3]
+                y_scale = prob_array.shape[1]/mask.bounds[2]
                 mask = scale(geom=mask, xfact=x_scale,
                              yfact=y_scale, origin=(0, 0))
                 mask = rasterio.features.rasterize([mask.buffer(-1)],
-                                                   prob_array.T.shape).T.astype(bool)
+                                                   prob_array.shape).astype(bool)
 
             prob_array = np.ma.masked_array(prob_array, mask=~mask)
-            mean_probabilities[band] = sreducer_fun(prob_array[~prob_array.mask])
+            mean_probabilities[band] = sreducer_fun(
+                prob_array[~prob_array.mask])
         except ee.EEException as e:
             print('Error in samplig probabilities values', e)
             mean_probabilities[band] = None
